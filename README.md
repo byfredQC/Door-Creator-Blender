@@ -4,6 +4,8 @@
 
 Crée des **portes GTA V / FiveM** directement dans Blender : pivot sur la charnière, collision, archétype YTYP avec les bons flags de porte, son de porte GTA, et une **ressource FiveM prête** à mettre sur ton serveur.
 
+<p align="center"><img src="docs/panel.png" alt="Door Creator panel in Blender" width="380"></p>
+
 *English version below.*
 
 ---
