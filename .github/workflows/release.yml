@@ -1,0 +1,29 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']        # git tag v1.2.1 && git push origin v1.2.1  ->  GitHub Release with the add-on zip
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Zip the add-on (folder gta_door_creator, ready for Blender "Install from Disk")
+        run: |
+          cp README.md gta_door_creator/README.md
+          zip -r Door-Creator-Blender.zip gta_door_creator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Door-Creator-Blender
+          path: Door-Creator-Blender.zip
+      - name: Publish the Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Door-Creator-Blender.zip
+          generate_release_notes: true
