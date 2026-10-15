@@ -27,7 +27,8 @@ Crée des **portes GTA V / FiveM** directement dans Blender : pivot sur la charn
 2. Dans Blender : **Edit › Preferences › Add-ons**.
 3. En haut à droite, menu **⌄** › **Install from Disk…** › choisis le `.zip`.
 4. Coche **GTA Door Creator (Sollumz)**.
-5. Dans la vue 3D, appuie sur **N** › onglet **Door Creator**.
+5. Dans la vue 3D, appuie sur **N** › onglet **Sollumz Tools** › panneau **GTA Door Creator** (en bas de l'onglet).
+   *Tu préfères un onglet à part ? En haut du panneau : **Door Creator** (ou Preferences › Add-ons › GTA Door Creator › Panel).*
 
 > Mise à jour : désactive puis supprime l'ancienne version, installe le nouveau zip, redémarre Blender.
 
@@ -118,7 +119,7 @@ Blender **4.2+** (tested on 5.2) · **Sollumz** enabled · **PyMateria** recomme
 ### Install
 1. Download **`Door-Creator-Blender.zip`** from **[Releases](../../releases/latest)** (don't unzip it).
 2. Blender › **Edit › Preferences › Add-ons** › **⌄** › **Install from Disk…** › pick the zip › enable **GTA Door Creator (Sollumz)**.
-3. 3D view › **N** › **Door Creator** tab. Language: **Auto / Français / English** buttons at the top.
+3. 3D view › **N** › **Sollumz Tools** tab › **GTA Door Creator** panel (bottom of the tab; switch to its own **Door Creator** tab at the top of the panel). Language: **Auto / Français / English** buttons at the top.
 
 ### Make a door
 1. **Your model**: select your door (mesh(es) or a Sollumz Drawable), standing up (Z up) › **Auto detect** (type + hinge side, opposite the handle).

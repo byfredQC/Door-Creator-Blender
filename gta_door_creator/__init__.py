@@ -5,9 +5,9 @@
 bl_info = {
     "name": "GTA Door Creator (Sollumz)",
     "author": "byfred",
-    "version": (1, 2, 1),
+    "version": (1, 3, 0),
     "blender": (4, 2, 0),
-    "location": "View3D > Sidebar (N) > Door Creator",
+    "location": "View3D > Sidebar (N) > Sollumz Tools > GTA Door Creator",
     "description": "Make GTA V / FiveM doors: pivot, collision, ytyp, sound and FiveM resource - with Sollumz",
     "category": "Import-Export",
 }
@@ -126,14 +126,35 @@ def _redraw(self, context):
             a.tag_redraw()
 
 
+SOLLUMZ_TAB = "Sollumz Tools"
+OWN_TAB = "Door Creator"
+
+
+def _place_panel(self, context):
+    """move the panel to the Sollumz Tools tab or to its own tab (a panel's tab is fixed at registration)"""
+    cls = GDC_PT_panel
+    try:
+        bpy.utils.unregister_class(cls)
+    except Exception:
+        pass
+    cls.bl_category = SOLLUMZ_TAB if self.location == "SOLLUMZ" else OWN_TAB
+    bpy.utils.register_class(cls)
+    _redraw(self, context)
+
+
 class GDC_Prefs(bpy.types.AddonPreferences):
     bl_idname = ADDON_KEY
     lang: EnumProperty(name="Language / Langue",
                        items=[("AUTO", "Auto (Blender)", "Same language as Blender / Même langue que Blender"), ("FR", "Français", ""), ("EN", "English", "")],
                        default="AUTO", update=_redraw)
+    location: EnumProperty(name="Panel / Panneau",
+                           items=[("SOLLUMZ", "Sollumz Tools", "Dans l'onglet Sollumz Tools / In the Sollumz Tools tab"),
+                                  ("OWN", "Door Creator", "Onglet à part / Its own tab")],
+                           default="SOLLUMZ", update=_place_panel)
 
     def draw(self, context):
         self.layout.prop(self, "lang", expand=True)
+        self.layout.prop(self, "location", expand=True)
 
 
 # ---------------------------------------------------------------------------- door sound (game.dat151.rel)
@@ -750,7 +771,11 @@ class GDC_PT_panel(bpy.types.Panel):
     bl_idname = "GDC_PT_panel"
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
-    bl_category = "Door Creator"
+    bl_category = SOLLUMZ_TAB      # moved by the "Panel" preference
+    bl_order = 100                 # under the Sollumz panels
+
+    def draw_header(self, context):
+        self.layout.label(text="", icon="MOD_BUILD")
 
     def draw(self, context):
         lay = self.layout
@@ -758,6 +783,7 @@ class GDC_PT_panel(bpy.types.Panel):
         row = lay.row(align=True)
         try:
             row.prop(context.preferences.addons[ADDON_KEY].preferences, "lang", expand=True)
+            lay.row(align=True).prop(context.preferences.addons[ADDON_KEY].preferences, "location", expand=True)
         except Exception:
             pass
         if not is_sollumz():
@@ -830,6 +856,11 @@ def register():
     for c in classes:
         bpy.utils.register_class(c)
     bpy.types.Scene.gdc = PointerProperty(type=GDC_Props)
+    try:
+        if bpy.context.preferences.addons[ADDON_KEY].preferences.location == "OWN":
+            _place_panel(bpy.context.preferences.addons[ADDON_KEY].preferences, bpy.context)
+    except Exception:
+        pass
 
 
 def unregister():
