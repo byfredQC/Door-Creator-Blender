@@ -5,7 +5,7 @@
 bl_info = {
     "name": "GTA Door Creator (Sollumz)",
     "author": "byfred",
-    "version": (1, 3, 0),
+    "version": (1, 4, 3),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar (N) > Sollumz Tools > GTA Door Creator",
     "description": "Make GTA V / FiveM doors: pivot, collision, ytyp, sound and FiveM resource - with Sollumz",
@@ -309,8 +309,55 @@ def pivot_point(an, props):
         lo, hi = an["min"][wa], an["max"][wa]
         left, right = (lo, hi) if le == "min" else (hi, lo)
         p[wa] = left if props.hinge == "LEFT" else right
+    elif is_side_slide(props):
+        # like the GTA gates (prop_facgate_08): origin on the leading edge, the leaf runs along local -X
+        p[wa] = an[slide_end(an, props)][wa]
     p[ta] = an["center"][ta]
     return p
+
+
+def normalize_drawable(drawable, piv, turn):
+    """Plain local space for every Sollumz version: the Drawable has no rotation and its models have identity
+    transforms, the geometry itself is expressed in the door frame (pivot + turn). Objects rotated by an import
+    (FBX / OBJ often add 90° on X) or a rotated Drawable made CodeWalker show the model and its box crossed."""
+    frame = Matrix.Translation(piv) @ turn
+    fix = Matrix.Translation(piv) @ turn.inverted() @ Matrix.Translation(-piv)   # how the door turns in Blender
+    kids = list(drawable.children)
+    worlds = {c: c.matrix_world.copy() for c in kids}
+    drawable.matrix_world = Matrix.Translation(piv)
+    for c in kids:
+        if c.type == "MESH" and getattr(c, "sollum_type", "") == "sollumz_drawable_model":
+            if c.data.users > 1:
+                c.data = c.data.copy()
+            c.data.transform(frame.inverted() @ worlds[c])
+            c.data.update()
+            c.matrix_parent_inverse = Matrix.Identity(4)
+            c.matrix_basis = Matrix.Identity(4)
+        else:
+            c.matrix_world = fix @ worlds[c]
+
+
+def is_side_slide(props):
+    return props.door_type == "SLIDING" and props.slide_dir in ("LEFT", "RIGHT")
+
+
+def slide_end(an, props):
+    """'min' / 'max' end of the width axis the leaf slides towards (front view left / right)"""
+    le = left_end(an)
+    re_ = "min" if le == "max" else "max"
+    return le if props.slide_dir == "LEFT" else re_
+
+
+def model_turn(an, props):
+    """rotation of the drawable so that local +X is the width axis (and, for side sliding, the opening direction)"""
+    if props.door_type == "NORMAL":
+        return Matrix.Identity(4)
+    wa = an["wa"]
+    sign = 1.0
+    if is_side_slide(props):
+        sign = 1.0 if slide_end(an, props) == "max" else -1.0
+    u = Vector((sign, 0, 0)) if wa == 0 else Vector((0, sign, 0))
+    return Matrix.Rotation(math.atan2(u.y, u.x), 4, "Z")
 
 
 # ---------------------------------------------------------------------------- properties
@@ -329,7 +376,7 @@ def _preview_update(self, context):
         if self.slide_dir == "UP":
             off = Vector((0, 0, float(d.get("gdc_height", 2.0))))
         else:
-            off = axis * w * (1 if self.slide_dir == "RIGHT" else -1)
+            off = (base.to_3x3() @ Vector((1, 0, 0))).normalized() * w   # local +X = opening direction
         m = Matrix.Translation(off * t) @ base
     else:
         m = Matrix.Translation(Vector((0, 0, float(d.get("gdc_height", 2.5)) * t))) @ base
@@ -396,6 +443,10 @@ class GDC_Props(bpy.types.PropertyGroup):
     angle: FloatProperty(name="Angle", default=90, min=10, max=180, update=_preview_update)
     slide_dir: EnumProperty(name="Slide", items=_SLIDE_ITEMS, default=1)
     garage_kind: EnumProperty(name="Garage", items=_GARAGE_ITEMS, default=0)
+    auto_open: BoolProperty(name="Auto", default=True,
+                            description="S'ouvre toute seule quand on approche (door system) / Opens by itself when someone comes close (door system)")
+    auto_dist: FloatProperty(name="Distance", default=4.0, min=0.5, max=30.0, unit="LENGTH",
+                             description="Distance d'ouverture auto / Auto-open distance")
     collision: EnumProperty(name="Collision", items=_COL_ITEMS, default=0)
     material: EnumProperty(name="Material", items=_MAT_ITEMS, default=0)
     sound: EnumProperty(name="Sound", items=_sound_items)
@@ -458,6 +509,9 @@ class GDC_OT_make(bpy.types.Operator):
             drawable.matrix_world = Matrix([list(drawable["gdc_base"][i * 4:i * 4 + 4]) for i in range(4)])
         an = analyze(world_points(meshes))
         piv = pivot_point(an, p)
+        # GTA slides a door along its LOCAL X axis: if the width runs along world Y, turn the model so X = width
+        # (the object gets +90° so it still looks the same in Blender; place it with that heading in CodeWalker)
+        turn = model_turn(an, p)
 
         if drawable is None:
             # plain meshes: bake their transform, then put the pivot at the world origin and let Sollumz make the Drawable
@@ -468,7 +522,7 @@ class GDC_OT_make(bpy.types.Operator):
                     o.data = o.data.copy()
                 o.data.transform(mw)
                 o.matrix_world = Matrix.Identity(4)
-                o.data.transform(Matrix.Translation(-piv))
+                o.data.transform(turn.inverted() @ Matrix.Translation(-piv))
                 o.data.update()
             ensure_sollumz_materials(context, meshes)
             sc = context.scene
@@ -484,17 +538,19 @@ class GDC_OT_make(bpy.types.Operator):
             if drawable is None:
                 self.report({"ERROR"}, T("Sollumz n'a pas pu créer le Drawable", "Sollumz could not create the Drawable"))
                 return {"CANCELLED"}
-            drawable.matrix_world = Matrix.Identity(4)
+            drawable.matrix_world = Matrix.Translation(piv) @ turn
         else:
             # existing drawable: move its origin to the pivot, children stay where they are
             kids = [(c, c.matrix_world.copy()) for c in drawable.children]
-            mw = drawable.matrix_world.copy()
+            mw = Matrix.Translation(piv) @ turn if p.door_type != "NORMAL" else drawable.matrix_world.copy()
             mw.translation = piv
             drawable.matrix_world = mw
             context.view_layer.update()
             for c, m in kids:
                 c.matrix_world = m
         drawable.name = name
+        context.view_layer.update()
+        normalize_drawable(drawable, piv, turn)
         context.view_layer.update()
 
         # ---- collision
@@ -590,8 +646,14 @@ class GDC_OT_make(bpy.types.Operator):
         bc, bs = (bmn + bmx) * 0.5, bmx - bmn
         bm.transform(Matrix.Translation(-bc))
         bm.transform(Matrix.Diagonal((size.x / max(bs.x, 1e-6), size.y / max(bs.y, 1e-6), size.z / max(bs.z, 1e-6), 1)))
-        bm.transform(Matrix.Translation((lmn + lmx) * 0.5))
         bm.update()
+        # the box must sit on its object origin: Sollumz writes the object position as the bound centre
+        # (vertices moved inside the mesh are ignored -> the collision ended up centred on the pivot in game)
+        box.location = (lmn + lmx) * 0.5
+        box.rotation_euler = (0, 0, 0)
+        box.scale = (1, 1, 1)
+        comp.rotation_euler = (0, 0, 0)
+        comp.scale = (1, 1, 1)
         box.data.materials.clear()
         bpy.ops.object.select_all(action="DESELECT")
         box.select_set(True)
@@ -610,7 +672,44 @@ class GDC_OT_preview_reset(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def manifest(name, ytyp, audio, sound_label):
+AUTO_DOOR_LUA = """-- Generated by GTA Door Creator (Blender)
+-- GTA only auto-opens a sliding / garage door that is in the door system:
+-- every copy of the model placed in your ymap / MLO is found and registered here.
+local MODEL = `%(name)s`
+local DISTANCE = %(dist).1f   -- metres
+local RATE = 1.5              -- opening speed (keep >= 1.5, below that GTA may ignore the distance)
+
+local done = {}
+
+local function register(obj)
+    if done[obj] then return end   -- per entity: a door that streams back in is set up again
+    local c = GetEntityCoords(obj)
+    local id = ('%%s_%%d_%%d_%%d'):format('%(name)s', math.floor(c.x * 10), math.floor(c.y * 10), math.floor(c.z * 10))
+    local hash = GetHashKey(id)
+    if not IsDoorRegisteredWithSystem(hash) then
+        AddDoorToSystem(hash, MODEL, c.x, c.y, c.z, false, false, false)
+    end
+    DoorSystemSetDoorState(hash, 0, false, false)          -- unlocked
+    DoorSystemSetAutomaticRate(hash, RATE, false, false)
+    DoorSystemSetAutomaticDistance(hash, DISTANCE, false, false)
+    done[obj] = true
+end
+
+CreateThread(function()
+    while true do
+        for obj in pairs(done) do
+            if not DoesEntityExist(obj) then done[obj] = nil end
+        end
+        for _, obj in ipairs(GetGamePool('CObject')) do
+            if GetEntityModel(obj) == MODEL then register(obj) end
+        end
+        Wait(2000)
+    end
+end)
+"""
+
+
+def manifest(name, ytyp, audio, sound_label, client=False):
     lines = ["-- Generated by GTA Door Creator (Blender)", "fx_version 'cerulean'", "game 'gta5'", "", f"name '{name}'",
              f"description 'Door: {name}'", "version '1.0.0'", "", "this_is_a_map 'yes'", "", "files {", f"  'stream/{ytyp}',"]
     if audio:
@@ -618,6 +717,8 @@ def manifest(name, ytyp, audio, sound_label):
     lines += ["}", "", f"data_file 'DLC_ITYP_REQUEST' 'stream/{ytyp}'"]
     if audio:
         lines += ["", f"-- door sound (GTA: {sound_label})", f"data_file 'AUDIO_GAMEDATA' 'audio/{audio.replace('.dat151.rel', '.dat')}'"]
+    if client:
+        lines += ["", "-- auto open (door system)", "client_script 'client.lua'"]
     return "\n".join(lines) + "\n"
 
 
@@ -677,13 +778,21 @@ class GDC_OT_export(bpy.types.Operator):
             with open(os.path.join(root, "audio", audio), "wb") as f:
                 f.write(build_door_audio_rel([(name, sid)]))
         ytyp = f"{ytyp_name}.ytyp"
+        auto = p.door_type != "NORMAL" and p.auto_open
+        cl = os.path.join(root, "client.lua")
+        if auto:
+            with open(cl, "w", encoding="utf-8") as f:
+                f.write(AUTO_DOOR_LUA % {"name": name, "dist": p.auto_dist})
+        elif os.path.exists(cl):
+            os.remove(cl)
         with open(os.path.join(root, "fxmanifest.lua"), "w", encoding="utf-8") as f:
-            f.write(manifest(name, ytyp, audio, label))
+            f.write(manifest(name, ytyp, audio, label, auto))
         with open(os.path.join(root, "README.txt"), "w", encoding="utf-8") as f:
             f.write(f"{name}\n{'=' * len(name)}\nGenerated by GTA Door Creator (Blender + Sollumz).\n\n"
                     f"1. Copy this folder into your server resources and add  ensure {name}  to server.cfg.\n"
-                    f"2. Place the model \"{name}\" in your ymap / MLO (CodeWalker).\n"
-                    f"3. In-game it is a GTA door (no script){', with the sound: ' + label if audio else ''}.\n\n"
+                    f"2. Place the model \"{name}\" in your ymap / MLO (CodeWalker).\n" +
+                    (f"3. In-game it opens by itself when someone is closer than {p.auto_dist:.1f} m (client.lua registers it in the GTA door system)"
+                     if auto else "3. In-game it is a GTA door (no script)") + f"{', with the sound: ' + label if audio else ''}.\n\n"
                     "AFTER CHANGING THE FILES: disconnect and reconnect to the server (a restart is not enough).\n")
         if xml_only:
             msg = T("Sollumz a exporté en XML (.ydr.xml / .ytyp.xml) : active « Native » (PyMateria) dans les préférences Sollumz, ou convertis les .xml avec CodeWalker",
@@ -809,6 +918,11 @@ class GDC_PT_panel(bpy.types.Panel):
             box.row(align=True).prop(p, "slide_dir", expand=True)
         else:
             box.row(align=True).prop(p, "garage_kind", expand=True)
+        if p.door_type != "NORMAL":
+            r = box.row(align=True)
+            r.prop(p, "auto_open", text=T("Ouverture auto", "Auto open"), toggle=True)
+            sub = r.row(align=True); sub.enabled = p.auto_open
+            sub.prop(p, "auto_dist", text=T("Distance", "Distance"))
         box.prop(p, "collision", text=T("Collision", "Collision"))
         if p.collision == "BOX":
             box.prop(p, "material", text=T("Matériau", "Material"))

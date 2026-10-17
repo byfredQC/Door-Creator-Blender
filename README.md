@@ -49,6 +49,8 @@ Crée des **portes GTA V / FiveM** directement dans Blender : pivot sur la charn
 - **Collision** : *Boîte (recommandé)* + matériau (bois, métal, verre…), *Garder la mienne*, ou *Aucune*.
 - **Son** : *Auto* (le son GTA par défaut du type) ou un des 47 sons de portes GTA.
 - **Distance LOD** : 100 m par défaut.
+- **Ouverture auto** (coulissante / garage) : la porte s'ouvre toute seule quand quelqu'un approche (distance réglable). L'export ajoute un `client.lua` qui l'inscrit dans le *door system* de GTA - sans ça une porte coulissante ne bouge pas.
+- Coulissante : comme les portails GTA (`prop_facgate_08`), l'origine est sur le **bord avant** (côté où elle glisse) et la porte s'étend sur **-X**. Garage : largeur sur l'axe **X**.
 - **YTYP** : *Nouveau ytyp* ou **ton propre ytyp** (par ex. celui de ton MLO) - le bouton ⤓ à côté importe ton `.ytyp` avec Sollumz.
 - Clique **Créer la porte** :
   - l'origine va sur la charnière (ou en bas au centre pour coulissante / garage) ;
