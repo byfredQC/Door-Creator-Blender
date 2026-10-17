@@ -27,3 +27,26 @@ jobs:
         with:
           files: Door-Creator-Blender.zip
           generate_release_notes: true
+
+      - name: Announce on Discord
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}   # repo Settings > Secrets and variables > Actions
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then echo "No DISCORD_WEBHOOK secret - skipped"; exit 0; fi
+          NOTES=$(gh release view "$TAG" --repo "$REPO" --json body -q .body 2>/dev/null | head -c 1500)
+          URL="https://github.com/$REPO/releases/tag/$TAG"
+          ZIP="https://github.com/$REPO/releases/download/$TAG/Door-Creator-Blender.zip"
+          jq -n --arg tag "$TAG" --arg url "$URL" --arg zip "$ZIP" --arg notes "$NOTES" '{
+            username: "Door Creator Blender",
+            embeds: [{
+              title: ("Door Creator Blender " + $tag + " est sorti !"),
+              url: $url,
+              color: 5793266,
+              description: ((if $notes == "" then "" else $notes + "\n\n" end) + "⬇️ **[Télécharger le zip](" + $zip + ")** - Blender › Preferences › Add-ons › Install from Disk")
+            }]
+          }' > payload.json
+          curl -sS -f -H "Content-Type: application/json" -d @payload.json "$DISCORD_WEBHOOK"
